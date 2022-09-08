@@ -7,7 +7,7 @@
 using namespace std;
 
 struct Entry {
-    static const uint32_t BLOCK_SIZE = 10;
+    static const uint32_t BLOCK_SIZE = 100;
     uint16_t p;
     uint32_t offset;
 };
@@ -24,56 +24,38 @@ union SieveEntry {
     uint32_t number;
     Entry entry;
 };
-static SieveEntry* g_sieve1 = new SieveEntry[Entry::BLOCK_SIZE];
-static SieveEntry* g_sieve2 = new SieveEntry[Entry::BLOCK_SIZE];
+static SieveEntry* g_sieve = new SieveEntry[Entry::BLOCK_SIZE];
 
 // TODO convert p to relative offset in Entry.
 // TODO convert offset in entry to an offset mod block size. Requires mod check before sieving block.
-void InitSieve(uint32_t index, SieveEntry* sieve) {
+void InitSieve(uint32_t index) {
     uint32_t base = index * Entry::BLOCK_SIZE;
     for (int i = 0; i < Entry::BLOCK_SIZE; i++) {
-        sieve[i].number = base + i;
+        g_sieve[i].number = base + i;
     }
 }
 
 // Eliminate all multiples of prime in the sieve, starting at the given offset.
-uint32_t SieveMultiples(uint32_t prime, uint32_t offset, SieveEntry* lowSieve) {
+uint32_t SieveMultiples(uint32_t prime, uint32_t offset) {
     uint32_t j = offset;
     for (; j < Entry::BLOCK_SIZE; j += prime) {
-        lowSieve[j].number = 0;
+        // printf("erase prime: %i, offset: %i\n", prime, j);
+        g_sieve[j].number = 0;
     }
     uint32_t end_offset = j - Entry::BLOCK_SIZE;
     return end_offset;
 }
 
-// Eliminate the next multiple of prime in the sieve. If offset is greater than the segment size,
-// remove it from the high sieve.
-uint32_t SieveSingle(uint32_t prime, uint32_t offset, SieveEntry* lowSieve, SieveEntry* highSieve) {
-    uint32_t end_offset = (offset + prime) % (2 * Entry::BLOCK_SIZE);
-    if (offset < Entry::BLOCK_SIZE) {
-        lowSieve[offset].number = 0;
-        if (end_offset < offset)
-            end_offset += Entry::BLOCK_SIZE;
-    } else {
-        highSieve[offset - Entry::BLOCK_SIZE].number = 0;
-        if (end_offset > offset)
-            end_offset -= Entry::BLOCK_SIZE;
-    }
-    // printf("erase: %i, prime: %i, offset: %i\n", highSieve[end_offset].number, prime, end_offset);
-    return end_offset;
-}
-
 // Sieve and compact in a single pass for the first block.
 uint32_t InitialSieve() {
-    InitSieve(0, g_sieve1);
-    InitSieve(1, g_sieve2);
+    InitSieve(0);
     int num_primes = 0;
     for (int i = 2; i < Entry::BLOCK_SIZE; i++) {
-        if (g_sieve1[i].number) {
-            int prime = g_sieve1[i].number;
-            int offset = SieveMultiples(prime, prime + prime, g_sieve1);
+        if (g_sieve[i].number) {
+            int prime = g_sieve[i].number;
+            int offset = SieveMultiples(prime, prime + prime);
             Entry entry = { prime, offset };  // prime, and offset into next block for sieving
-            g_sieve1[num_primes++].entry = entry;
+            g_sieve[num_primes++].entry = entry;
         }
     }
     return num_primes;
@@ -81,43 +63,33 @@ uint32_t InitialSieve() {
 
 // Move all found primes into entries at the beginning of the sieve. This will never overwrite any
 // found primes.
-uint32_t Compact(uint32_t index, SieveEntry* sieve) {
+uint32_t Compact(uint32_t index) {
     uint32_t base = index * Entry::BLOCK_SIZE;
     uint32_t num_primes = 0;
     for (uint32_t i = 0; i < Entry::BLOCK_SIZE; i++) {
-        if (sieve[i].number) {
-            int prime = sieve[i].number;
-            uint32_t p = prime;// - base;
-            uint32_t offset = (prime + prime) % (2 * Entry::BLOCK_SIZE);
-            Entry entry = { p, offset };
-            sieve[num_primes++].entry = entry;
+        if (g_sieve[i].number) {
+            int prime = g_sieve[i].number;
+            uint32_t offset = prime + prime - base - Entry::BLOCK_SIZE;
+            Entry entry = { prime, offset };
+            g_sieve[num_primes++].entry = entry;
         }
     }
     return num_primes;
 }
 
-Block MakeBlock(uint32_t count, SieveEntry* sieve) {
+Block MakeBlock(uint32_t count) {
     Entry* entries = new Entry[count];
     // copy the sieve entries into the right-sized block
-    for (uint32_t i = 0; i < count; i++) entries[i] = sieve[i].entry;
+    for (uint32_t i = 0; i < count; i++) entries[i] = g_sieve[i].entry;
     Block result = { entries, count };
     return result;
 }
 
-void SieveBlock0(Block block, uint32_t index, SieveEntry* lowSieve) {
+void SieveBlock(Block block, uint32_t index) {
     uint32_t base = index * Entry::BLOCK_SIZE;
     for (uint32_t i = 0; i < block.count; i++) {
         Entry &entry = block.entries[i];
-        uint32_t offset = SieveMultiples(entry.p/* + base*/, entry.offset, lowSieve);
-        entry.offset = offset;
-    }
-}
-
-void SieveBlock(Block block, uint32_t index, SieveEntry* lowSieve, SieveEntry* highSieve) {
-    uint32_t base = index * Entry::BLOCK_SIZE;
-    for (uint32_t i = 0; i < block.count; i++) {
-        Entry &entry = block.entries[i];
-        uint32_t offset = SieveSingle(entry.p/* + base*/, entry.offset, lowSieve, highSieve);
+        uint32_t offset = SieveMultiples(entry.p/* + base*/, entry.offset);
         entry.offset = offset;
     }
 }
@@ -139,29 +111,18 @@ int main() {
 
     // Set up the first block
     uint32_t count = InitialSieve();
+    g_sieved_blocks.push_back(MakeBlock(count));
+
     uint32_t total = count;
-    g_sieved_blocks.push_back(MakeBlock(count, g_sieve1));
-
-    SieveEntry* lowSieve = g_sieve1;
-    SieveEntry* highSieve = g_sieve2;
-
     for (uint32_t i = 1; i < 10; i++) {
-        std::swap(lowSieve, highSieve);
-                printf("sieving segment: %i, block: 0\n", i);
-        SieveBlock0(g_sieved_blocks[0], 0, lowSieve);
-        InitSieve(i + 1, highSieve);
-        for (uint32_t j = 1; j < g_sieved_blocks.size(); j++) {
-            if ((i / j) * j == i) {
-                printf("sieving segment: %i, block: %i\n", i, j);
-                if (j == 1) {
-                    printf("here\n");
-                }
-                SieveBlock(g_sieved_blocks[j], j, lowSieve, highSieve);
-            }
+        InitSieve(i);
+        for (uint32_t j = 0; j < g_sieved_blocks.size(); j++) {
+            // printf("sieving segment: %i, block: %i\n", i, j);
+            SieveBlock(g_sieved_blocks[j], j);
         }
-        count = Compact(i, lowSieve);
+        count = Compact(i);
+        g_sieved_blocks.push_back(MakeBlock(count));
         total += count;
-        g_sieved_blocks.push_back(MakeBlock(count, lowSieve));
     }
 
     std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
