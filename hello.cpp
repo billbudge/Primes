@@ -10,7 +10,7 @@ using namespace std;
 // acts as a priority queue, sorted on offset. This allows us to avoid processing primes when they
 // are irrelevant for the current sieve segment.
 struct Entry {
-    static const uint32_t BLOCK_SIZE = 65536;
+    static const uint32_t BLOCK_SIZE = 256;
     uint64_t p : 16, offset : 48;
 };
     // Entry(uint16_t p, uint64_t offset) : p(p), offset(offset) {}
@@ -248,23 +248,23 @@ int main() {
         // printf("count: %i\n", count);
     }
     {
-        // Miller-Rabin primality testing
-        std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
+        // // Miller-Rabin primality testing
+        // std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-        uint32_t count = 1;
-        for (uint64_t i = 3; i < 65536 * 10000; i++) {
-            if (MillerRabinPrimalityTest(i)) count++;
-        }
-        std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
-        long long us = std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
-        printf("microseconds: %i\n", (int)us);
-        printf("count: %i\n", count);
+        // uint32_t count = 1;
+        // for (uint64_t i = 3; i < 65536 * 10000; i++) {
+        //     if (MillerRabinPrimalityTest(i)) count++;
+        // }
+        // std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+        // long long us = std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
+        // printf("microseconds: %i\n", (int)us);
+        // printf("count: %i\n", count);
     }
     {
         // Simple sieve.
         std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 
-        const uint64_t SIEVESIZE = 65536 * 10000;
+        const uint64_t SIEVESIZE = 256*256;
         uint32_t* sieve = new uint32_t[SIEVESIZE];
         for (uint64_t i = 0; i < SIEVESIZE; i++) {
             sieve[i] = i;
@@ -295,7 +295,7 @@ int main() {
         g_sieved_primes.push_back(MakeSegmentPrimes(count, 0));
 
         uint64_t total = count;
-        for (uint64_t i = 1; i < 1000; i++) {
+        for (uint64_t i = 1; i < 256; i++) {
             InitSieve(i);
             SieveSegment0(g_sieved_primes[0]);
             for (uint64_t j = 1; j < g_sieved_primes.size(); j++) {
